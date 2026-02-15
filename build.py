@@ -12,6 +12,8 @@ import re
 import subprocess
 from pathlib import Path
 
+GLIBC_PATH = "/data/data/com.termux/files/usr/glibc"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # UTILS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -28,6 +30,39 @@ def format_size(size: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TB"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPILATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def build_shim(shim_path: str):
+    log("Building bunfs_shim.so...")
+    glibc = Path(GLIBC_PATH)
+    if not glibc.exists():
+        error(f"Glibc not found at {GLIBC_PATH}. Cannot build shim.")
+        sys.exit(1)
+
+    cmd = [
+        "clang",
+        "--target=aarch64-linux-gnu",
+        "-shared", "-fPIC", "-O2", "-nostdlib",
+        f"-I{glibc}/include",
+        f"-Wl,--dynamic-linker={glibc}/lib/ld-linux-aarch64.so.1",
+        f"-Wl,-rpath,{glibc}/lib",
+        "-o", shim_path,
+        "bunfs_shim.c",
+        f"{glibc}/lib/libc.so.6",
+        f"{glibc}/lib/libc_nonshared.a",
+        f"{glibc}/lib/ld-linux-aarch64.so.1",
+        f"{glibc}/lib/libdl.so.2"
+    ]
+    
+    try:
+        subprocess.run(cmd, check=True)
+        log("Shim built successfully.")
+    except subprocess.CalledProcessError:
+        error("Failed to build bunfs_shim.so")
+        sys.exit(1)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ELF PARSING
@@ -224,9 +259,12 @@ def build(input_path: str, output_path: str, wrapper_path: str, shim_path: str):
     input_file = Path(input_path).resolve()
     output_file = Path(output_path).resolve()
     wrapper_file = Path(wrapper_path).resolve()
+    shim_file = Path(shim_path).resolve()
 
     is_default_wrapper = (str(wrapper_file) == str(Path("./wrapper").resolve()))
     wrapper_built = False
+    
+    is_default_shim = (str(shim_file) == str(Path("./bunfs_shim.so").resolve()))
 
     if not input_file.exists():
         error(f"Input file not found: {input_file}")
@@ -244,6 +282,12 @@ def build(input_path: str, output_path: str, wrapper_path: str, shim_path: str):
         else:
              error(f"Wrapper not found: {wrapper_file}")
              sys.exit(1)
+
+    if not shim_file.exists():
+        if is_default_shim:
+             build_shim(str(shim_file))
+        else:
+             log(f"Warning: Shim not found at {shim_file}. Native libs may fail to load.")
 
     log(f"Processing: {input_file.name} -> {output_file.name}")
 
