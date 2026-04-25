@@ -118,11 +118,19 @@ static void extract_to_cache(const uint8_t *data, size_t size,
 
 static void cache_bun_elf(const uint8_t *elf, size_t size,
                           const char *cache_dir, char *out, size_t out_len) {
-    size_t sample = size < 4096 ? size : 4096;
-    uint8_t key[4096 + 8];
+    /* Use first 64KB + last 64KB + size for cache key */
+    /* This avoids cache collision when versions share identical headers */
+    size_t sample = size < 65536 ? size : 65536;
+    size_t last_sample = sample;
+    if (size < last_sample) last_sample = size;
+    size_t key_sz = sample + last_sample + 8;
+    uint8_t *key = malloc(key_sz);
+    if (!key) die("malloc");
     memcpy(key, elf, sample);
-    memcpy(key + sample, &size, 8);
-    uint64_t hash = fnv1a(key, sample + 8);
+    memcpy(key + sample, elf + size - last_sample, last_sample);
+    memcpy(key + sample + last_sample, &size, 8);
+    uint64_t hash = fnv1a(key, key_sz);
+    free(key);
 
     char name[64];
     snprintf(name, sizeof(name), "bun-%016llx", (unsigned long long)hash);
