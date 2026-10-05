@@ -328,8 +328,6 @@ static void userland_exec(const char *ldso, const char **argv, size_t argc,
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char **argv, char **envp) {
-<<<<<<< HEAD
-=======
     // Use readlink() instead of direct open("/proc/self/exe")
     // Some Android kernels truncate /proc/self/exe reads to ELF header size
     char self_path[4096];
