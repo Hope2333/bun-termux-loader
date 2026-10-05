@@ -100,8 +100,20 @@ static void extract_to_cache(const uint8_t *data, size_t size,
     snprintf(out, out_len, "%s/%s", cache_dir, name);
 
     struct stat st;
-    if (stat(out, &st) == 0 && (size_t)st.st_size == size)
-        return;
+    if (stat(out, &st) == 0 && (size_t)st.st_size == size) {
+        /* Size match alone is not enough: a same-size corrupted cache file
+         * would be reused as-is and crash the runtime later. Both the Bun
+         * ELF and embedded native libs (.so/.node) are ELF, so verify the
+         * magic before trusting the cache; otherwise re-extract. */
+        int cfd = open(out, O_RDONLY);
+        if (cfd >= 0) {
+            uint8_t magic[4];
+            int ok = read(cfd, magic, 4) == 4 &&
+                     memcmp(magic, ELFMAG, SELFMAG) == 0;
+            close(cfd);
+            if (ok) return;
+        }
+    }
 
     char tmp[512];
     snprintf(tmp, sizeof(tmp), "%s/.%s.tmp", cache_dir, name);
