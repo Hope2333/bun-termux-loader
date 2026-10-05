@@ -133,6 +133,12 @@ Native .so/.node libs are auto-detected and embedded.
 | `TMPDIR` | `/data/data/com.termux/files/usr/tmp` | Cache directory base |
 | `BUNFS_CACHE_DIR` | `$TMPDIR/bun-termux-cache/bunfs-libs` | Directory for extracted native libs (set automatically by wrapper) |
 
+## Optional hook.so
+
+If a file named `hook.so` exists in the **same directory as the wrapper**, it is automatically passed to glibc's `ld.so` via `--preload` (colon-joined with `bunfs_shim.so` when embedded native libs are present). Binaries without a sibling `hook.so` behave exactly as before.
+
+**Requirement:** the hook library must be **glibc-linked** (it is loaded by `ld-linux-aarch64.so.1`), not bionic.
+
 ## Technical Details
 
 See [SOLUTION.md](SOLUTION.md) for the full technical writeup including:
