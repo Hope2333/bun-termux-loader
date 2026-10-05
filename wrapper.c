@@ -345,6 +345,7 @@ int main(int argc, char **argv, char **envp) {
     char self_path[4096];
     ssize_t rl = readlink("/proc/self/exe", self_path, sizeof(self_path)-1);
     if (rl < 0) die("readlink /proc/self/exe failed");
+    if ((size_t)rl >= sizeof(self_path) - 1) die("self path too long");
     self_path[rl] = 0;
     int fd = open(self_path, O_RDONLY);
     if (fd < 0) die("open self failed");
