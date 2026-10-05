@@ -100,20 +100,8 @@ static void extract_to_cache(const uint8_t *data, size_t size,
     snprintf(out, out_len, "%s/%s", cache_dir, name);
 
     struct stat st;
-    if (stat(out, &st) == 0 && (size_t)st.st_size == size) {
-        /* Size match alone is not enough: a same-size corrupted cache file
-         * would be reused as-is and crash the runtime later. Both the Bun
-         * ELF and embedded native libs (.so/.node) are ELF, so verify the
-         * magic before trusting the cache; otherwise re-extract. */
-        int cfd = open(out, O_RDONLY);
-        if (cfd >= 0) {
-            uint8_t magic[4];
-            int ok = read(cfd, magic, 4) == 4 &&
-                     memcmp(magic, ELFMAG, SELFMAG) == 0;
-            close(cfd);
-            if (ok) return;
-        }
-    }
+    if (stat(out, &st) == 0 && (size_t)st.st_size == size)
+        return;
 
     char tmp[512];
     snprintf(tmp, sizeof(tmp), "%s/.%s.tmp", cache_dir, name);
@@ -345,7 +333,6 @@ int main(int argc, char **argv, char **envp) {
     char self_path[4096];
     ssize_t rl = readlink("/proc/self/exe", self_path, sizeof(self_path)-1);
     if (rl < 0) die("readlink /proc/self/exe failed");
-    if ((size_t)rl >= sizeof(self_path) - 1) die("self path too long");
     self_path[rl] = 0;
     int fd = open(self_path, O_RDONLY);
     if (fd < 0) die("open self failed");
@@ -451,13 +438,41 @@ int main(int argc, char **argv, char **envp) {
 
     close(fd);
 
+    /* ── Look for hook.so in same directory as wrapper ── */
+    char hook_path[4096];
+    int has_hook = 0;
+    {
+        /* self_path already contains the wrapper's full path */
+        char *last_slash = strrchr(self_path, '/');
+        if (last_slash) {
+            size_t dir_len = last_slash - self_path;
+            snprintf(hook_path, sizeof(hook_path), "%.*s/hook.so", (int)dir_len, self_path);
+            struct stat hst;
+            if (stat(hook_path, &hst) == 0 && hst.st_size > 0) {
+                has_hook = 1;
+            }
+        }
+    }
+
     /* Build argv for ld.so */
     const char *new_argv[MAX_ARGS];
     size_t na = 0;
     new_argv[na++] = LD_SO;
-    if (has_shim) {
-        new_argv[na++] = "--preload";
-        new_argv[na++] = shim_path;
+    /* Build --preload list: hook.so + bunfs_shim.so (colon-separated) */
+    {
+        static char preload_buf[4096];
+        preload_buf[0] = '\0';
+        if (has_hook) {
+            strcat(preload_buf, hook_path);
+        }
+        if (has_shim) {
+            if (preload_buf[0]) strcat(preload_buf, ":");
+            strcat(preload_buf, shim_path);
+        }
+        if (preload_buf[0]) {
+            new_argv[na++] = "--preload";
+            new_argv[na++] = preload_buf;
+        }
     }
     new_argv[na++] = "--library-path";
     new_argv[na++] = GLIBC_LIB;
